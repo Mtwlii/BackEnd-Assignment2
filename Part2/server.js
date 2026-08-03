@@ -1,25 +1,25 @@
-/** 
- * i'm used Ai For assest me to complete this task
- * thanks eng rana 
- */
-
-
 const http = require('node:http');
-const fs = require('node:fs');
+const fs = require('node:fs/promises');
 const path = require('node:path');
 
 const USERS_FILE = path.join(__dirname, 'users.json');
 
-function readUsers() {
-  if (!fs.existsSync(USERS_FILE)) {
-    fs.writeFileSync(USERS_FILE, '[]');
+async function readUsers() {
+  try {
+    const data = await fs.readFile(USERS_FILE, 'utf-8');
+    return JSON.parse(data);
+  } catch (err) {
+    // File doesn't exist yet -> create it with an empty array
+    if (err.code === 'ENOENT') {
+      await fs.writeFile(USERS_FILE, '[]');
+      return [];
+    }
+    throw err;
   }
-  const data = fs.readFileSync(USERS_FILE, 'utf-8');
-  return JSON.parse(data);
 }
 
-function writeUsers(users) {
-  fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+async function writeUsers(users) {
+  await fs.writeFile(USERS_FILE, JSON.stringify(users, null, 2));
 }
 
 function getRequestBody(req) {
@@ -41,10 +41,11 @@ function getRequestBody(req) {
 const server = http.createServer(async (req, res) => {
   res.setHeader('Content-Type', 'application/json');
 
+  // CREATE — POST /user
   if (req.method === 'POST' && req.url === '/user') {
     try {
       const newUser = await getRequestBody(req);
-      const users = readUsers();
+      const users = await readUsers();
 
       const emailExists = users.some((user) => user.email === newUser.email);
 
@@ -59,7 +60,7 @@ const server = http.createServer(async (req, res) => {
       newUser.id = newId;
 
       users.push(newUser);
-      writeUsers(users);
+      await writeUsers(users);
 
       res.statusCode = 201;
       res.end(JSON.stringify({ message: 'User added successfully.' }));
@@ -70,16 +71,18 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // READ ALL — GET /user
   if (req.method === 'GET' && req.url === '/user') {
-    const users = readUsers();
+    const users = await readUsers();
     res.statusCode = 200;
     res.end(JSON.stringify(users));
     return;
   }
 
+  // READ ONE — GET /user/:id
   if (req.method === 'GET' && req.url.startsWith('/user/')) {
     const userId = Number(req.url.split('/')[2]);
-    const users = readUsers();
+    const users = await readUsers();
 
     const user = users.find((u) => u.id === userId);
 
@@ -94,12 +97,13 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // UPDATE — PATCH /user/:id
   if (req.method === 'PATCH' && req.url.startsWith('/user/')) {
     const userId = Number(req.url.split('/')[2]);
 
     try {
       const updates = await getRequestBody(req);
-      const users = readUsers();
+      const users = await readUsers();
 
       const userIndex = users.findIndex((user) => user.id === userId);
 
@@ -116,7 +120,7 @@ const server = http.createServer(async (req, res) => {
         }
       });
 
-      writeUsers(users);
+      await writeUsers(users);
 
       const updatedField = allowedFields.find((field) => updates[field] !== undefined);
       res.statusCode = 200;
@@ -128,9 +132,10 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // DELETE — DELETE /user/:id
   if (req.method === 'DELETE' && req.url.startsWith('/user/')) {
     const userId = Number(req.url.split('/')[2]);
-    const users = readUsers();
+    const users = await readUsers();
 
     const userIndex = users.findIndex((user) => user.id === userId);
 
@@ -141,13 +146,14 @@ const server = http.createServer(async (req, res) => {
     }
 
     users.splice(userIndex, 1);
-    writeUsers(users);
+    await writeUsers(users);
 
     res.statusCode = 200;
     res.end(JSON.stringify({ message: 'User deleted successfully.' }));
     return;
   }
 
+  // FALLBACK — unmatched route
   res.statusCode = 404;
   res.end(JSON.stringify({ message: 'Route not found.' }));
 });
